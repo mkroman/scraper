@@ -24,7 +24,13 @@ enum Output {
     Text,
 }
 
-fn query<T: Read>(input: &Input, output: &Output, selector: &Selector, file: &mut T) -> bool {
+fn query<T: Read>(
+    input: &Input,
+    output: &Output,
+    selector: &Selector,
+    file: &mut T,
+    multiple: bool,
+) -> bool {
     let mut html = String::new();
     file.read_to_string(&mut html).unwrap();
 
@@ -34,7 +40,9 @@ fn query<T: Read>(input: &Input, output: &Output, selector: &Selector, file: &mu
     };
 
     let mut matched = false;
-    for element in html.select(selector) {
+    let mut sel = html.select(selector);
+
+    let print_element = |element: scraper::ElementRef| {
         use crate::Output::*;
         match *output {
             Html => println!("{}", element.html()),
@@ -48,7 +56,20 @@ fn query<T: Read>(input: &Input, output: &Output, selector: &Selector, file: &mu
             Name => println!("{}", element.value().name()),
             Text => println!("{}", element.text().collect::<String>()),
         }
-        matched = true;
+    };
+
+    if multiple {
+        for element in sel {
+            print_element(element);
+
+            matched = true;
+        }
+    } else {
+        if let Some(element) = sel.nth(0) {
+            print_element(element);
+
+            matched = true;
+        }
     }
     matched
 }
@@ -64,6 +85,7 @@ fn main() {
     opts.optflag("i", "id", "output ID of elements");
     opts.optflag("n", "name", "output name of elements");
     opts.optflag("t", "text", "output text of elements");
+    opts.optflag("m", "multiple", "Print multiple matching elements");
     opts.optflag("h", "help", "this cruft");
     opts.optopt("", "install-man-page", "install real documentation", "PATH");
 
@@ -97,6 +119,8 @@ fn main() {
         Input::Document
     };
 
+    let multiple = matches.opt_present("multiple");
+
     let output = if matches.opt_present("I") {
         Output::InnerHtml
     } else if matches.opt_present("a") {
@@ -119,13 +143,13 @@ fn main() {
     let selector = Selector::parse(selector).unwrap();
 
     let matched = if files.is_empty() {
-        query(&input, &output, &selector, &mut io::stdin())
+        query(&input, &output, &selector, &mut io::stdin(), multiple)
     } else {
         files
             .iter()
             .map(File::open)
             .map(Result::unwrap)
-            .map(|mut f| query(&input, &output, &selector, &mut f))
+            .map(|mut f| query(&input, &output, &selector, &mut f, multiple))
             .any(|m| m)
     };
 
